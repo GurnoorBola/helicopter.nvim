@@ -3,9 +3,27 @@
 -- Should store in a table
 local M = {}
 
-local query = require("helicopter.query")
+local config = require("helicopter.config")
+local agent = require("helicopter.agent")
+local json = require("helicopter.json")
 
-M.query = query
+M.ask = require("helicopter.ask")
+
+function M.setup(opts)
+	opts = opts or {}
+	config = setmetatable(opts, { __index = config })
+	agent.start_server()
+
+	agent.initialize(function(response_id)
+		local json_response = agent.read_response(response_id)
+		if json_response then
+			print("Response Received:", json.encode(json_response))
+		else
+			print("Failed to initalize. Stopping server...")
+			agent.stop_server()
+		end
+	end)
+end
 
 -- print("Helicopter nvim loaded!")
 return M

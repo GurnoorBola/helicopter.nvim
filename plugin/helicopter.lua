@@ -1,6 +1,7 @@
 local helicopter = require("helicopter")
+local agent = require("helicopter.agent")
 
 -- Query Selected Text
-vim.api.nvim_create_user_command("QuerySelected", function(opts)
-	helicopter.query.query_selected(opts.line1, opts.line2)
-end, { range = true })
+-- vim.api.nvim_create_user_command("AskSelected", helicopter.ask.select_and_ask, { range = "%" })
+--
+-- vim.api.nvim_create_user_command("AgentHealth", agent.check_health, {})
