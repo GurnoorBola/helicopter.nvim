@@ -14,8 +14,7 @@ function M.setup(opts)
 	config = setmetatable(opts, { __index = config })
 	agent.start_server()
 
-	agent.initialize(function(response_id)
-		local json_response = agent.read_response(response_id)
+	agent.initialize(function(json_response)
 		if json_response then
 			print("Response Received:", json.encode(json_response))
 		else

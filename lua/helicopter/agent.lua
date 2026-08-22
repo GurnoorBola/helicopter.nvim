@@ -1,4 +1,8 @@
 -- ACP implementation
+-- If we need the result we should define a callback with a json_result paramter
+-- Otherwise fire and forget
+--
+-- Notifications can come in on response
 
 local M = {}
 
@@ -8,15 +12,17 @@ local config = require("helicopter.config")
 local MAX_REQUESTS = 1000
 local JSON_RPC_VERSION = "2.0"
 
-local responses = {}
 local callbacks = {}
+
+-- Maps session id to session object
+local active_sesssions = {}
 
 local curr_id = 0
 local function build_request(method, params)
 	curr_id = (curr_id + 1) % MAX_REQUESTS
 	return {
 		jsonrpc = JSON_RPC_VERSION,
-		id = curr_id,
+		id = 0,
 		method = method,
 		params = params,
 	}
@@ -30,22 +36,16 @@ local function parse_response(str_response)
 	print("[Error] Code:", json_response.error.code, "Message:", json_response.error.message)
 end
 
-local function await(request_id, on_response)
+local function register_callback(request_id, on_response)
 	callbacks[request_id] = on_response
 end
 
 local function send_request(json_request, on_response)
 	if on_response then
-		await(json_request.id, on_response)
+		register_callback(json_request.id, on_response)
 	end
 	local str_request = json.encode(json_request) .. "\n"
 	return vim.fn.chansend(M.id, str_request)
-end
-
-function M.read_response(request_id)
-	local json_response = responses[request_id]
-	responses[request_id] = nil
-	return json_response
 end
 
 -- Last line may be incomplete if stream doesnt end in ''
@@ -59,13 +59,22 @@ end
 
 local function on_response(str_response)
 	local json_response = parse_response(str_response)
-	if json_response then
-		responses[json_response.id] = json_response
-		if callbacks[json_response.id] then
-			local callback = callbacks[json_response.id]
-			callbacks[json_response.id] = nil
-			callback()
-		end
+	if not json_response then
+		return
+	end
+
+	if not json_response.id then
+		local session = active_sesssions[json_response.params.sessionId]
+		-- NOTE: end users don't call update but can define what happens
+		-- on certain update types using on_update_<type>
+		session:_update(json_response.params.update)
+		return
+	end
+
+	if callbacks[json_response.id] then
+		local callback = callbacks[json_response.id]
+		callbacks[json_response.id] = nil
+		callback(json_response.result)
 	end
 end
 
@@ -90,15 +99,58 @@ function M.stop_server()
 	M.id = nil
 end
 
--- Sends a request
+-- Initializes the agent and executes callback if all checks pass
 function M.initialize(callback)
 	local json_request = build_request("initialize", config.initialize_request)
-	send_request(json_request, function()
+	send_request(json_request, function(json_response)
 		-- TODO: check response and configure client
-		callback(json_request.id)
+		callback(json_response)
 	end)
 end
 
-function M.authenticate(method_id) end
+function M.authenticate(method_id, callback)
+	local json_request = build_request("authenticate", { method_id = method_id })
+	send_request(json_request, function(json_response)
+		-- TODO: map the method_id to the handler for that auth method
+		-- execute appropriate authentication logic
+		callback(json_response)
+	end)
+end
+
+-- Session object that is produced from the new function
+M.Session = { _updates = {}, _callbacks = {} }
+
+function M.Session:new(params, callback)
+	local new_session = {}
+	setmetatable(new_session, { __index = self })
+
+	local json_request = build_request("session/new", params)
+
+	send_request(json_request, function(json_response)
+		-- TODO: setup the session object
+		new_session.id = json_response.sessionId
+		active_sesssions[new_session.id] = new_session
+		callback(json_response)
+	end)
+	return new_session
+end
+
+function M.Session:prompt(prompt, callback)
+	local json_request = build_request("session/prompt", { sessionId = self.id, prompt = prompt })
+	send_request(json_request, function(json_response)
+		callback(json_response)
+	end)
+end
+
+function M.Session:on_session_update(type, callback)
+	self._callbacks[type] = callback
+end
+
+function M.Session:_update(update)
+	table.insert(self._updates, update)
+	-- TODO: switch on update type and call appropriate handler
+	local callback = self._callbacks[update.sessionUpdate]
+	callback(update)
+end
 
 return M
