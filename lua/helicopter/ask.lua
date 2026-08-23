@@ -14,11 +14,8 @@ function M.select_and_ask(opts)
 	local query = utils.prompt_input()
 	local prompt = build_prompt(query, lines)
 
-	-- local session = agent.Session:new()
-	-- session:on_session_update("plan", function(update)
-	-- 	print("recieved plan update")
-	-- end)
-	-- session:prompt()
+	-- local seq_session = agent.Session.seq:new()
+	-- seq_session:prompt()
 
 	local response = agent.send_message(prompt)
 	print(response)
