@@ -3,23 +3,25 @@
 -- Should store in a table
 local M = {}
 
-local config = require("helicopter.config")
-local agent = require("helicopter.agent")
-local json = require("helicopter.json")
+local Config = require("helicopter.config")
+local Agent = require("helicopter.agent")
+local Json = require("helicopter.json")
 
 M.ask = require("helicopter.ask")
 
 function M.setup(opts)
 	opts = opts or {}
-	config = setmetatable(opts, { __index = config })
-	agent.start_server()
+	Config = setmetatable(opts, { __index = Config })
+	local server = Agent.Server:new(Config.agent_start_cmd)
 
-	agent.initialize(function(json_response)
+	server:start()
+
+	server:initialize(function(json_response)
 		if json_response then
-			print("Response Received:", json.encode(json_response))
+			print("Response Received:", Json.encode(json_response))
 		else
 			print("Failed to initalize. Stopping server...")
-			agent.stop_server()
+			server:stop()
 		end
 	end)
 end
