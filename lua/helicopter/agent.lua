@@ -6,19 +6,14 @@
 
 local M = {}
 
-local json = require("helicopter.json")
-local config = require("helicopter.config")
-local utils = require("helicopter.utils")
+local Json = require("helicopter.json")
+local Config = require("helicopter.config")
+local Utils = require("helicopter.utils")
 
 local MAX_REQUESTS = 1000
 local JSON_RPC_VERSION = "2.0"
 
----@type table<number, Callback>
-local callbacks = {}
-
--- Maps session id to session object
----@type table<string, Session>
-local active_sesssions = {}
+-- Helpers
 
 local curr_id = 0
 local function build_request(method, params)
@@ -32,84 +27,105 @@ local function build_request(method, params)
 end
 
 local function parse_response(str_response)
-	local json_response = json.decode(str_response)
+	local json_response = Json.decode(str_response)
 	if not json_response.error then
 		return json_response
 	end
 	print("[Error] Code:", json_response.error.code, "Message:", json_response.error.message)
 end
 
-local function register_callback(request_id, callback)
-	callbacks[request_id] = callback
+---@alias JsonObject table<string, any>
+---@alias Callback fun(json_response:JsonObject)
+
+---@class Server
+---@field private _id number|nil
+---@field private _cmd string[]
+---@field private _callbacks table<number, Callback>
+---@field private _sessions table<string, Session>
+---@field private _last string
+M.Server = {}
+
+---@return Server
+function M.Server:new(cmd)
+	local new_server = {
+		_cmd = cmd,
+		_callbacks = {},
+		_sessions = {},
+		_last = "",
+	}
+	return setmetatable(new_server, { __index = self })
 end
 
+---@package
 ---@param json_request JsonObject
 ---@param callback Callback
 ---@return number
-local function send_request(json_request, callback)
+function M.Server:_send_request(json_request, callback)
 	if callback then
-		register_callback(json_request.id, callback)
+		self._callbacks[json_request.id] = callback
 	end
-	local str_request = json.encode(json_request) .. "\n"
-	return vim.fn.chansend(M.id, str_request)
+	local str_request = Json.encode(json_request) .. "\n"
+	return vim.fn.chansend(self._id, str_request)
 end
 
 -- Last line may be incomplete if stream doesnt end in ''
 -- Never returns a ''
-local last = ""
-local function get_lines(data)
-	data[1] = last .. data[1]
-	last = table.remove(data)
+---@private
+---@param data string[]
+---@return string[]
+function M.Server:_get_lines(data)
+	data[1] = self._last .. data[1]
+	self._last = table.remove(data)
 	return data
 end
 
-local function on_response(str_response)
+---@private
+---@param str_response string
+function M.Server:_on_response(str_response)
 	local json_response = parse_response(str_response)
 	if not json_response then
 		return
 	end
 
 	if not json_response.id then
-		local session = active_sesssions[json_response.params.sessionId]
+		local session = self._sessions[json_response.params.sessionId]
 		-- NOTE: end users don't call update but can define what happens
 		-- on certain update types using on_update_<type>
 		session:_update(json_response.params.update)
 		return
 	end
 
-	if callbacks[json_response.id] then
-		local callback = callbacks[json_response.id]
-		callbacks[json_response.id] = nil
+	if self._callbacks[json_response.id] then
+		local callback = self._callbacks[json_response.id]
+		self._callbacks[json_response.id] = nil
 		callback(json_response.result)
 	end
 end
 
-local function on_stdout(_, data, _)
-	local lines = get_lines(data)
-	for _, str_response in ipairs(lines) do
-		on_response(str_response)
-	end
-end
-
-function M.start_server()
-	M.id = vim.fn.jobstart(config.agent_start_cmd, {
-		on_stdout = on_stdout,
+function M.Server:start()
+	self._id = vim.fn.jobstart(Config.agent_start_cmd, {
+		on_stdout = function(_, data, _)
+			local lines = self:_get_lines(data)
+			for _, str_response in ipairs(lines) do
+				self:_on_response(str_response)
+			end
+		end,
 		on_exit = function()
 			print("Server shutdown!")
 		end,
 	})
 end
 
-function M.stop_server()
-	vim.fn.jobstop(M.id)
-	M.id = nil
+function M.Server:stop()
+	vim.fn.jobstop(self._id)
+	self._id = nil
 end
 
 -- Initializes the agent and executes callback if all checks pass
 ---@param callback Callback
-function M.initialize(callback)
-	local json_request = build_request("initialize", config.initialize_request)
-	send_request(json_request, function(json_response)
+function M.Server:initialize(callback)
+	local json_request = build_request("initialize", Config.initialize_request)
+	self:_send_request(json_request, function(json_response)
 		-- TODO: check response and configure client
 		callback(json_response)
 	end)
@@ -117,35 +133,48 @@ end
 
 ---@param method_id string
 ---@param callback Callback
-function M.authenticate(method_id, callback)
+function M.Server:authenticate(method_id, callback)
 	local json_request = build_request("authenticate", { method_id = method_id })
-	send_request(json_request, function(json_response)
+	self:_send_request(json_request, function(json_response)
 		-- TODO: map the method_id to the handler for that auth method
 		-- execute appropriate authentication logic
 		callback(json_response)
 	end)
 end
 
----@alias JsonObject table<string, any>
----@alias Callback fun(json_response:JsonObject)
-
---- An ACP Session
----@class Session
----@field public id string
----@field private _updates table[]
----@field private _callbacks Callback[]
----@field private _queue Queue
-M.Session = {}
+---@package
+---@param session Session
+function M.Server:_register_session(session)
+	self._sessions[session._id] = session
+end
 
 ---@param params JsonObject
 ---@param callback Callback
 ---@return Session
-function M.Session:new(params, callback)
+function M.Server:new_session(params, callback)
+	return M.Session:new(self, params, callback)
+end
+
+--- An ACP Session
+---@class Session
+---@field package _server Server
+---@field package _id string
+---@field package _updates table[]
+---@field private _callbacks Callback[]
+---@field private _queue Queue
+M.Session = {}
+
+---@param server Server
+---@param params JsonObject
+---@param callback Callback
+---@return Session
+function M.Session:new(server, params, callback)
 	local new_session = {
-		id = "unset",
+		_server = server,
+		_id = "unset",
 		_updates = {},
 		_callbacks = {},
-		_queue = utils.queue:new(),
+		_queue = Utils.queue:new(),
 	}
 
 	setmetatable(new_session, { __index = self })
@@ -154,12 +183,12 @@ function M.Session:new(params, callback)
 
 	local json_request = build_request("session/new", params)
 
-	send_request(json_request, function(json_response)
+	server:_send_request(json_request, function(json_response)
 		-- TODO: setup the session object
 		new_session._queue:pop()
 
-		new_session.id = json_response.sessionId
-		active_sesssions[new_session.id] = new_session
+		new_session._id = json_response.sessionId
+		server:_register_session(self)
 		callback(json_response)
 
 		if not new_session._queue:empty() then
@@ -176,8 +205,8 @@ end
 ---@return self
 function M.Session:prompt(prompt, callback)
 	local prompt_cmd = function()
-		local json_request = build_request("session/prompt", { sessionId = self.id, prompt = prompt })
-		send_request(json_request, function(json_response)
+		local json_request = build_request("session/prompt", { sessionId = self._id, prompt = prompt })
+		self._server:_send_request(json_request, function(json_response)
 			self._queue:pop()
 
 			callback(json_response)
@@ -203,12 +232,15 @@ function M.Session:on_session_update(type, callback)
 	return self
 end
 
+---@package
 ---@param update JsonObject
 function M.Session:_update(update)
 	table.insert(self._updates, update)
 	-- TODO: switch on update type and call appropriate handler
 	local callback = self._callbacks[update.sessionUpdate]
-	callback(update)
+	if callback then
+		callback(update)
+	end
 end
 
 return M
