@@ -4,7 +4,7 @@
 local M = {}
 
 local Config = require("helicopter.config")
-local Agent = require("helicopter.agent")
+local Servers = require("helicopter.servers")
 local Json = require("helicopter.json")
 
 M.ask = require("helicopter.ask")
@@ -12,9 +12,7 @@ M.ask = require("helicopter.ask")
 function M.setup(opts)
 	opts = opts or {}
 	Config = setmetatable(opts, { __index = Config })
-	local server = Agent.Server:new(Config.agent_start_cmd)
-
-	server:start()
+	local server = Servers.start_server(Config.agent_start_cmd)
 
 	server:initialize(function(json_response)
 		if json_response then
