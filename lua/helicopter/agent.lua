@@ -16,14 +16,21 @@ local JSON_RPC_VERSION = "2.0"
 -- Helpers
 
 local curr_id = 0
-local function build_request(method, params)
+---@param method string
+---@param params JsonObject
+---@param notification? boolean
+---@return JsonObject
+local function build_request(method, params, notification)
 	curr_id = (curr_id + 1) % MAX_REQUESTS
-	return {
+	local request = {
 		jsonrpc = JSON_RPC_VERSION,
-		id = 0,
 		method = method,
 		params = params,
 	}
+	if not notification then
+		request.id = curr_id
+	end
+	return request
 end
 
 local function parse_response(str_response)
@@ -58,7 +65,7 @@ end
 
 ---@package
 ---@param json_request JsonObject
----@param callback Callback
+---@param callback? Callback
 ---@return number
 function M.Server:_send_request(json_request, callback)
 	if callback then
@@ -102,6 +109,7 @@ function M.Server:_on_response(str_response)
 	end
 end
 
+---@return number
 function M.Server:start()
 	self._id = vim.fn.jobstart(Config.agent_start_cmd, {
 		on_stdout = function(_, data, _)
@@ -114,6 +122,7 @@ function M.Server:start()
 			print("Server shutdown!")
 		end,
 	})
+	return self._id
 end
 
 function M.Server:stop()
@@ -146,6 +155,12 @@ end
 ---@param session Session
 function M.Server:_register_session(session)
 	self._sessions[session._id] = session
+end
+
+---@package
+---@param session Session
+function M.Server:_unregister_session(session)
+	self._sessions[session._id] = nil
 end
 
 ---@param params JsonObject
@@ -188,11 +203,11 @@ function M.Session:new(server, params, callback)
 		new_session._queue:pop()
 
 		new_session._id = json_response.sessionId
-		server:_register_session(self)
+		server:_register_session(new_session)
 		callback(json_response)
 
 		if not new_session._queue:empty() then
-			local next = new_session.seq._queue:peek()
+			local next = new_session._queue:peek()
 			next()
 		end
 	end)
@@ -200,12 +215,18 @@ function M.Session:new(server, params, callback)
 	return new_session
 end
 
----@param prompt JsonObject
+-- TODO: add support for complex prompts with more than one attachment
+
+---@param prompt string
 ---@param callback Callback
 ---@return self
 function M.Session:prompt(prompt, callback)
 	local prompt_cmd = function()
-		local json_request = build_request("session/prompt", { sessionId = self._id, prompt = prompt })
+		local content_block = {
+			type = "text",
+			text = prompt,
+		}
+		local json_request = build_request("session/prompt", { sessionId = self._id, prompt = { content_block } })
 		self._server:_send_request(json_request, function(json_response)
 			self._queue:pop()
 
@@ -240,6 +261,30 @@ function M.Session:_update(update)
 	local callback = self._callbacks[update.sessionUpdate]
 	if callback then
 		callback(update)
+	end
+end
+
+---@return self
+function M.Session:cancel()
+	local json_request = build_request("session/cancel", { sessionId = self._id }, true)
+	self._server:_send_request(json_request)
+	return self
+end
+
+---@param callback Callback
+function M.Session:delete(callback)
+	local delete_cmd = function()
+		local json_request = build_request("session/delete", { sessionId = self._id })
+		self._server:_send_request(json_request, function(json_response)
+			self._queue:clear()
+			self._server:_unregister_session(self)
+			-- TODO: do other cleanup activities
+			callback(json_response)
+		end)
+	end
+	self._queue:push(delete_cmd)
+	if self._queue:empty() then
+		delete_cmd()
 	end
 end
 
