@@ -18,7 +18,7 @@ end
 
 ---@return number
 function M.queue:size()
-	return self._front - self._back
+	return self._back - self._front
 end
 
 ---@return boolean
