@@ -167,23 +167,27 @@ function M.Server:authenticate(method_id, callback)
 	end)
 end
 
----@package
----@param session Session
-function M.Server:_register_session(session)
-	self._sessions[session._id] = session
-end
-
----@package
----@param session Session
-function M.Server:_unregister_session(session)
-	self._sessions[session._id] = nil
-end
-
 ---@param params JsonObject
 ---@param callback Callback
 ---@return Session
 function M.Server:new_session(params, callback)
-	return M.Session:new(self, params, callback)
+	---@type Session
+	local session
+	session = M.Session:new(self, params, function(json_response)
+		self._sessions[session._id] = session
+		callback(json_response)
+	end)
+	return session
+end
+
+---@param session Session
+---@param callback Callback
+function M.Server:delete_session(session, callback)
+	return session:_delete(function(json_response)
+		callback(json_response)
+		self._sessions[session._id] = nil
+		session._server = nil
+	end)
 end
 
 --- Sessions ---
@@ -221,7 +225,6 @@ function M.Session:new(server, params, callback)
 		new_session._queue:pop()
 
 		new_session._id = json_response.sessionId
-		server:_register_session(new_session)
 		callback(json_response)
 
 		if not new_session._queue:empty() then
@@ -282,13 +285,14 @@ function M.Session:cancel()
 	return self
 end
 
+---Sessions should be deleted through the server so they are deregistered correctly
+---@package
 ---@param callback Callback
-function M.Session:delete(callback)
+function M.Session:_delete(callback)
 	local delete_cmd = function()
 		local json_request = build_request("session/delete", { sessionId = self._id })
 		self._server:_send_request(json_request, function(json_response)
 			self._queue:clear()
-			self._server:_unregister_session(self)
 			-- TODO: do other cleanup activities
 			callback(json_response)
 		end)

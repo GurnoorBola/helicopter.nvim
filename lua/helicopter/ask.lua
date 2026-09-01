@@ -24,9 +24,6 @@ local function do_select_and_ask(session, opts)
 	session:prompt(prompt, function()
 		print("Received:", response)
 	end)
-	-- session:delete(function()
-	-- 	print("Deleted session:", id)
-	-- end)
 end
 
 -- TODO:
