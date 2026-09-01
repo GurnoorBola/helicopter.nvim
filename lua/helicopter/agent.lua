@@ -326,7 +326,7 @@ end
 
 M.Session._request_handlers = {
 	["fs/read_text_file"] = M.Session._read_text_file,
-	["fs/write_text_file"] = M.Session._read_text_file,
+	["fs/write_text_file"] = M.Session._write_text_file,
 }
 
 ---@private
