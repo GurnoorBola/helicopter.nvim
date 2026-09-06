@@ -3,19 +3,42 @@ local M = {}
 local Config = require("helicopter.config")
 local Utils = require("helicopter.utils")
 local Popup = require("nui.popup")
+local NuiLine = require("nui.line")
+
+local ns_id = vim.api.nvim_create_namespace("helicopter")
+
+-- highlights
+
+---@enum Highlight
+local Highlight = {
+	Standard = "HelicopterStandard",
+	Error = "HelicopterError",
+	Warning = "HelicopterWarning",
+	Success = "HelicopterSuccess",
+	Hint = "HelicopterHint",
+	Info = "HelicopterInfo",
+	Muted = "HelicopterMuted",
+}
+
+vim.api.nvim_set_hl(0, Highlight.Standard, { link = "Normal", default = true })
+vim.api.nvim_set_hl(0, Highlight.Error, { link = "DiagnosticError", default = true })
+vim.api.nvim_set_hl(0, Highlight.Warning, { link = "DiagnosticWarn", default = true })
+vim.api.nvim_set_hl(0, Highlight.Success, { link = "DiagnosticOk", default = true })
+vim.api.nvim_set_hl(0, Highlight.Hint, { link = "DiagnosticHint", default = true })
+vim.api.nvim_set_hl(0, Highlight.Info, { link = "DiagnosticInfo", default = true })
+vim.api.nvim_set_hl(0, Highlight.Muted, { link = "Comment", default = true })
 
 -- notifications are stored for config.notification_len seconds
 local notifications = Utils.queue:new()
 
 local hidden = false
-local NOTI_WIDTH = 20
 local notification_popup = Popup({
 	position = {
 		row = vim.o.lines - vim.o.cmdheight - 2,
 		col = 0,
 	},
 	size = {
-		width = NOTI_WIDTH,
+		width = 1,
 		height = 1,
 	},
 	anchor = "SW",
@@ -28,7 +51,7 @@ local notification_popup = Popup({
 	},
 	win_options = {
 		winblend = 10,
-		winhighlight = "Normal:Keyword",
+		winhighlight = "Normal:Normal",
 	},
 })
 
@@ -41,18 +64,33 @@ local function update_noti_popup()
 		return
 	end
 	notification_popup:mount()
+
+	---@type NuiLine[]
+	local data = notifications:data()
+
+	local max_width = 1
+	for _, line in ipairs(data) do
+		local length = line:content():len()
+		max_width = length > max_width and length or max_width
+	end
 	notification_popup:update_layout({
 		size = {
-			width = NOTI_WIDTH,
+			width = max_width,
 			height = notifications:size(),
 		},
 	})
-	vim.api.nvim_buf_set_lines(notification_popup.bufnr, 0, -1, false, notifications:data())
+	for i, line in ipairs(data) do
+		line:render(notification_popup.bufnr, ns_id, i)
+	end
 end
 
 -- push a notification to the queue and update notification element
----@param msg string
-function M.notify(msg)
+---@param str string
+---@param status? Highlight
+function M.notify(str, status)
+	local msg = NuiLine()
+	-- TODO: change this to switch on status and make notifications nicer
+	msg:append(str, status)
 	notifications:push(msg)
 
 	update_noti_popup()
