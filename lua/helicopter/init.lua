@@ -14,10 +14,28 @@ function M.setup(opts)
 	Config = setmetatable(opts, { __index = Config })
 	local server = Servers.start_server(Config.agent_start_cmd)
 
-	Ui.notify("Initializing agent...", "HelicopterInfo")
+	local client_title = Config.initialize_request.clientInfo.title
+	local client_version = Config.initialize_request.clientInfo.version
+	Ui.notify({
+		{ str = "(" .. client_version .. ") ", status = "HelicopterMuted" },
+		{ str = client_title, status = "HelicopterInfo" },
+	})
+
+	Ui.notify({
+		{ str = " Initializing agent", status = "HelicopterHint" },
+		{ str = "...", status = "HelicopterMuted" },
+	})
 	server:initialize(function(json_response)
 		if json_response then
-			Ui.notify("Agent initialized!", "HelicopterSuccess")
+			Ui.notify(" Agent initialized!", "HelicopterSuccess")
+			if json_response.agentInfo then
+				local agent_title = json_response.agentInfo.title or json_response.agentInfo.name
+				local agent_version = json_response.agentInfo.version
+				Ui.notify({
+					{ str = "(" .. agent_version .. ") ", status = "HelicopterMuted" },
+					{ str = agent_title, status = "HelicopterInfo" },
+				})
+			end
 		else
 			Ui.notify("Failed to initalize. Stopping server...", "HelicopterError")
 			server:stop()

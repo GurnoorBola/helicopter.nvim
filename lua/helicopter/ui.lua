@@ -34,20 +34,19 @@ local notifications = Utils.queue:new()
 local hidden = false
 local notification_popup = Popup({
 	position = {
-		row = vim.o.lines - vim.o.cmdheight - 2,
-		col = 0,
+		row = 0,
+		col = vim.o.columns,
 	},
 	size = {
 		width = 1,
 		height = 1,
 	},
-	anchor = "SW",
+	anchor = "NE",
 	enter = false,
 	focusable = false,
 	relative = "win",
 	buf_options = {
-		modifiable = true,
-		readonly = false,
+		modifiable = false,
 	},
 	win_options = {
 		winblend = 10,
@@ -73,7 +72,13 @@ local function update_noti_popup()
 		local length = line:content():len()
 		max_width = length > max_width and length or max_width
 	end
+
+	vim.bo[notification_popup.bufnr].modifiable = true
 	notification_popup:update_layout({
+		position = {
+			row = 0,
+			col = vim.o.columns,
+		},
 		size = {
 			width = max_width,
 			height = notifications:size(),
@@ -82,15 +87,37 @@ local function update_noti_popup()
 	for i, line in ipairs(data) do
 		line:render(notification_popup.bufnr, ns_id, i)
 	end
+	vim.api.nvim_buf_call(notification_popup.bufnr, function()
+		vim.cmd("%right " .. max_width)
+	end)
+	vim.bo[notification_popup.bufnr].modifiable = false
 end
 
+-- keep notifications anchored to top left
+vim.api.nvim_create_autocmd("VimResized", {
+	callback = function()
+		update_noti_popup()
+	end,
+})
+
+---@class HelicopterText
+---@field str string
+---@field status Highlight
+
 -- push a notification to the queue and update notification element
+---@overload fun(texts:HelicopterText[])
 ---@param str string
 ---@param status? Highlight
 function M.notify(str, status)
 	local msg = NuiLine()
+	if type(str) == "table" then
+		for _, text in ipairs(str) do
+			msg:append(text.str, text.status)
+		end
+	else
+		msg:append(str, status)
+	end
 	-- TODO: change this to switch on status and make notifications nicer
-	msg:append(str, status)
 	notifications:push(msg)
 
 	update_noti_popup()
