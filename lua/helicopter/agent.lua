@@ -320,6 +320,11 @@ function M.Session:_handle_request(json_request)
 	local method = json_request.method
 
 	local handler = self._request_handlers[method]
+	if not handler then
+		handler = function(_, _)
+			print("no handler for ", method)
+		end
+	end
 	handler(self, json_request.params)
 
 	if self._callbacks[method] then
