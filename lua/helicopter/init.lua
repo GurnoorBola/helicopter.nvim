@@ -6,6 +6,7 @@ local M = {}
 local Config = require("helicopter.config")
 local Servers = require("helicopter.servers")
 local Json = require("helicopter.json")
+local Ui = require("helicopter.ui")
 
 M.ask = require("helicopter.ask")
 
@@ -14,15 +15,15 @@ function M.setup(opts)
 	Config = setmetatable(opts, { __index = Config })
 	local server = Servers.start_server(Config.agent_start_cmd)
 
+	Ui.notify("Initializing...")
 	server:initialize(function(json_response)
 		if json_response then
-			print("Response Received:", Json.encode(json_response))
+			Ui.notify("Initialized!")
 		else
-			print("Failed to initalize. Stopping server...")
+			Ui.notify("Failed to initalize. Stopping server...")
 			server:stop()
 		end
 	end)
 end
 
--- print("Helicopter nvim loaded!")
 return M

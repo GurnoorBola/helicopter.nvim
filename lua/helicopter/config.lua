@@ -5,6 +5,8 @@ local M = {}
 
 M.agent_start_cmd = { "opencode", "acp" }
 
+M.notification_len = 5
+
 M.initialize_request = {
 	protocolVersion = 1,
 	clientCapabilities = {

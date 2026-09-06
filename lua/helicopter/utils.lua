@@ -13,7 +13,34 @@ function M.queue:new()
 		_back = 0,
 		_data = {},
 	}
-	return setmetatable(new_queue, { __index = self })
+	return setmetatable(new_queue, { __index = self, __tostring = M.queue.tostring })
+end
+
+---@return string
+function M.queue:tostring()
+	local res = "["
+	res = res .. tostring(self._data[self._front])
+	for i = self._front + 1, self._back - 1, 1 do
+		res = res .. ", " .. tostring(self._data[i])
+	end
+	res = res .. "]\n"
+	return res
+end
+
+---@param reverse? boolean
+---@return any[]
+function M.queue:data(reverse)
+	local data = {}
+	if reverse then
+		for i = self._back - 1, self._front, -1 do
+			table.insert(data, self._data[i])
+		end
+	else
+		for i = self._front, self._back - 1, 1 do
+			table.insert(data, self._data[i])
+		end
+	end
+	return data
 end
 
 ---@return number
