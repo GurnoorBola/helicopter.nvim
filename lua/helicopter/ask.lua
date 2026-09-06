@@ -1,18 +1,22 @@
 local M = {}
 
 local Utils = require("helicopter.utils")
+local Json = require("helicopter.json")
 local Servers = require("helicopter.servers")
 
 -- TODO: update this to build better prompts
-local function build_prompt(query, lines)
-	local prompt = "Question: " .. query .. "\nContext for question:" .. Utils.flatten_str_arr(lines)
-	return prompt
+local function build_question_prompt(query, lines)
+	local json_prompt = {}
+	json_prompt["Question"] = query
+	json_prompt["Context for question"] = lines
+	local str_prompt = Json.encode(json_prompt)
+	return str_prompt
 end
 
 local function do_select_and_ask(session, opts)
 	local lines = Utils.get_lines(opts.line1, opts.line2)
 	local query = Utils.prompt_input()
-	local text = build_prompt(query, lines)
+	local text = build_question_prompt(query, lines)
 	local prompt = { { type = "text", text = text } }
 
 	local response = ""
