@@ -4,6 +4,7 @@ local Config = require("helicopter.config")
 local Utils = require("helicopter.utils")
 local Popup = require("nui.popup")
 local NuiLine = require("nui.line")
+local Layout = require("nui.layout")
 
 local ns_id = vim.api.nvim_create_namespace("helicopter")
 
@@ -18,6 +19,7 @@ local Highlight = {
 	Hint = "HelicopterHint",
 	Info = "HelicopterInfo",
 	Muted = "HelicopterMuted",
+	Highlight = "HelicopterHighlight",
 }
 
 vim.api.nvim_set_hl(0, Highlight.Standard, { link = "Normal", default = true })
@@ -27,6 +29,7 @@ vim.api.nvim_set_hl(0, Highlight.Success, { link = "DiagnosticOk", default = tru
 vim.api.nvim_set_hl(0, Highlight.Hint, { link = "DiagnosticHint", default = true })
 vim.api.nvim_set_hl(0, Highlight.Info, { link = "DiagnosticInfo", default = true })
 vim.api.nvim_set_hl(0, Highlight.Muted, { link = "Comment", default = true })
+vim.api.nvim_set_hl(0, Highlight.Highlight, { link = "CursorLine", default = true })
 
 -- notifications are stored for config.notification_len seconds
 local notifications = Utils.queue:new()
@@ -132,5 +135,67 @@ function M.hide_notifications()
 	hidden = true
 	notification_popup:unmount()
 end
+
+-- TODO:
+-- prompt window floating
+
+local chat_history = Popup({
+	enter = false,
+	focusable = true,
+	border = {
+		style = "double",
+		text = {
+			top = "Session",
+			top_align = "center",
+		},
+	},
+})
+
+local chat_input = Popup({
+	enter = true,
+	focusable = true,
+	border = "double",
+})
+
+local chat_config = {
+	options = {
+		position = "50%",
+		size = {
+			width = "80%",
+			height = "80%",
+		},
+	},
+	box = Layout.Box({
+		Layout.Box(chat_history, { size = "90%" }),
+		Layout.Box(chat_input, { size = "10%" }),
+	}, { dir = "col" }),
+}
+
+local chat = Layout(chat_config.options, chat_config.box)
+
+vim.api.nvim_create_autocmd("VimResized", {
+	callback = function()
+		chat:update(chat_config.options, chat_config.box)
+	end,
+})
+
+---@param on_submit fun(value:string)
+function M.open_chat(on_submit)
+	chat_input:map("i", "<CR>", function()
+		local lines = vim.api.nvim_buf_get_lines(chat_input.bufnr, 0, -1, false)
+		local flat_lines = Utils.flatten_str_arr(lines)
+		vim.api.nvim_buf_set_lines(chat_input.bufnr, 0, -1, false, {})
+		on_submit(flat_lines)
+	end)
+	chat:mount()
+end
+
+function M.update_chat() end
+
+function M.close_chat()
+	chat:unmount()
+end
+
+-- TODO: diff mode
 
 return M
