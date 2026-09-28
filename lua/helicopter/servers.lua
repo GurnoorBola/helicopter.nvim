@@ -9,7 +9,9 @@ M._servers = {}
 function M.start_server(cmd)
 	local server = Agent.Server:new(cmd)
 	local id = server:start()
+	---@private
 	M._active = server
+	---@private
 	M._servers[id] = server
 	return server
 end
@@ -19,6 +21,9 @@ end
 function M.get_server(id)
 	if id then
 		return M._servers[id]
+	end
+	if not M._active then
+		error("Error: No server started")
 	end
 	return M._active
 end

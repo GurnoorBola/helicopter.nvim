@@ -168,23 +168,27 @@ function M.Server:authenticate(method_id, callback)
 end
 
 ---@param params JsonObject
----@param callback Callback
+---@param callback? Callback
 ---@return Session
 function M.Server:new_session(params, callback)
 	---@type Session
 	local session
 	session = M.Session:new(self, params, function(json_response)
 		self._sessions[session._id] = session
-		callback(json_response)
+		if callback then
+			callback(json_response)
+		end
 	end)
 	return session
 end
 
 ---@param session Session
----@param callback Callback
+---@param callback? Callback
 function M.Server:delete_session(session, callback)
 	return session:_delete(function(json_response)
-		callback(json_response)
+		if callback then
+			callback(json_response)
+		end
 		self._sessions[session._id] = nil
 		session._server = nil
 	end)
@@ -196,14 +200,14 @@ end
 ---@class Session
 ---@field package _server Server
 ---@field package _id string
----@field private _callbacks Callback[]
+---@field private _callbacks table<UpdateType, Callback>
 ---@field private _queue Queue
 ---@field private _request_handlers table<string, function>
 M.Session = {}
 
 ---@param server Server
 ---@param params JsonObject
----@param callback Callback
+---@param callback? Callback
 ---@return Session
 function M.Session:new(server, params, callback)
 	local new_session = {
@@ -225,7 +229,9 @@ function M.Session:new(server, params, callback)
 		new_session._queue:pop()
 
 		new_session._id = json_response.sessionId
-		callback(json_response)
+		if callback then
+			callback(json_response)
+		end
 
 		if not new_session._queue:empty() then
 			local next = new_session._queue:peek()
@@ -237,7 +243,7 @@ function M.Session:new(server, params, callback)
 end
 
 ---@param prompt JsonObject
----@param callback Callback
+---@param callback? Callback
 ---@return self
 function M.Session:prompt(prompt, callback)
 	local prompt_cmd = function()
@@ -245,7 +251,9 @@ function M.Session:prompt(prompt, callback)
 		self._server:_send_request(json_request, function(json_response)
 			self._queue:pop()
 
-			callback(json_response)
+			if callback then
+				callback(json_response)
+			end
 
 			if not self._queue:empty() then
 				local next = self._queue:peek()
@@ -260,7 +268,22 @@ function M.Session:prompt(prompt, callback)
 	return self
 end
 
----@param type string
+---@enum UpdateType
+M.Session.UpdateType = {
+	user_message_chunk = "user_message_chunk",
+	agent_message_chunk = "agent_message_chunk",
+	agent_thought_chunk = "agent_thought_chunk",
+	tool_call = "tool_call",
+	tool_call_update = "tool_call_update",
+	plan = "plan",
+	available_commands_update = "available_commands_update",
+	current_mode_update = "current_mode_update",
+	config_option_update = "config_option_update",
+	session_info_update = "session_info_update",
+	usage_update = "usage_update",
+}
+
+---@param type UpdateType
 ---@param callback Callback
 ---@return self
 function M.Session:on_session_update(type, callback)
@@ -287,14 +310,16 @@ end
 
 ---Sessions should be deleted through the server so they are deregistered correctly
 ---@package
----@param callback Callback
+---@param callback? Callback
 function M.Session:_delete(callback)
 	local delete_cmd = function()
 		local json_request = build_request("session/delete", { sessionId = self._id })
 		self._server:_send_request(json_request, function(json_response)
 			self._queue:clear()
 			-- TODO: do other cleanup activities
-			callback(json_response)
+			if callback then
+				callback(json_response)
+			end
 		end)
 	end
 	self._queue:push(delete_cmd)
