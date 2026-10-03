@@ -2,6 +2,7 @@ local M = {}
 
 local Config = require("helicopter.config")
 local Utils = require("helicopter.utils")
+local SessionManager = require("helicopter.session_manager")
 local Popup = require("nui.popup")
 local NuiLine = require("nui.line")
 local Layout = require("nui.layout")
@@ -179,20 +180,76 @@ vim.api.nvim_create_autocmd("VimResized", {
 	end,
 })
 
----@param on_submit fun(value:string)
-function M.open_chat(on_submit)
+-- handler for what to do when recieving a new update
+---@type table<UpdateType, function>
+local chat_update_handler = {}
+
+chat_update_handler["agent_message_chunk"] = function(session_update)
+	local content = session_update.content
+	if content.type == "text" then
+		local new_lines = vim.split(content.text, "\n")
+
+		local last_line = vim.api.nvim_buf_get_lines(chat_history.bufnr, -2, -1, false)[1]
+
+		new_lines[1] = last_line .. new_lines[1]
+
+		vim.api.nvim_buf_set_lines(chat_history.bufnr, -2, -1, false, new_lines)
+	else
+		vim.notify("ui: unrecognized content type")
+	end
+end
+
+---@param session_update JsonObject
+local function update_chat(session_update)
+	vim.api.nvim_buf_call(chat_history.bufnr, function()
+		vim.cmd(":$")
+	end)
+	-- TODO:
+	local handler = chat_update_handler[session_update.sessionUpdate]
+	if handler then
+		handler(session_update)
+	end
+end
+
+---@param managed_session ManagedSession
+---@param on_submit? fun(value:string)
+function M.chat_open(managed_session, on_submit)
+	managed_session:on_update(function(json_response)
+		update_chat(json_response)
+	end)
+
+	chat:mount()
+
+	chat_input:on("QuitPre", M.chat_close)
+	chat_history:on("QuitPre", M.chat_close)
+
+	chat_history.border:set_text("top", managed_session.name, "center")
+
+	vim.api.nvim_buf_call(chat_history.bufnr, function()
+		vim.cmd(":set wrap")
+	end)
+
 	chat_input:map("i", "<CR>", function()
 		local lines = vim.api.nvim_buf_get_lines(chat_input.bufnr, 0, -1, false)
 		local flat_lines = Utils.flatten_str_arr(lines)
 		vim.api.nvim_buf_set_lines(chat_input.bufnr, 0, -1, false, {})
-		on_submit(flat_lines)
+
+		managed_session:prompt({ {
+			text = flat_lines,
+		} })
+
+		if on_submit then
+			on_submit(flat_lines)
+		end
 	end)
-	chat:mount()
 end
 
-function M.update_chat() end
+---@param lines string[]
+function M.chat_append_input_text(lines)
+	vim.api.nvim_buf_set_lines(chat_input.bufnr, -1, -1, false, lines)
+end
 
-function M.close_chat()
+function M.chat_close()
 	chat:unmount()
 end
 

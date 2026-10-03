@@ -29,11 +29,9 @@ function ManagedSession:new(name, cwd, session)
 		session = session,
 	}
 	setmetatable(new_session_data, { __index = self })
-	for _, update_type in pairs(Session.UpdateType) do
-		session:on_session_update(update_type, function(json_response)
-			new_session_data:handle_update(json_response)
-		end)
-	end
+	new_session_data:on_update(function(json_response)
+		new_session_data:handle_update(json_response)
+	end)
 	return new_session_data
 end
 
@@ -47,22 +45,52 @@ function ManagedSession:handle_update(session_update)
 	-- print(self.history[#self.history].sessionUpdate)
 end
 
----@param type UpdateType
+---@param update_type UpdateType
 ---@param callback Callback
-function ManagedSession:on_update(type, callback)
-	self.session:on_session_update(type, function(json_response)
+function ManagedSession:on_update_type(update_type, callback)
+	self.session:on_session_update(update_type, function(json_response)
 		self:handle_update(json_response)
 		callback(json_response)
 	end)
 end
 
+---@param callback Callback
+function ManagedSession:on_update(callback)
+	for _, update_type in pairs(Session.UpdateType) do
+		self:on_update_type(update_type, callback)
+	end
+end
+
 -- TODO:
 
----@param prompt JsonObject
+---@class ResourceLink
+---@field name string
+---@field uri string
+
+---@class Prompt
+---@field text? string
+---@field resource_link? ResourceLink
+
+---@param prompts Prompt[]
 ---@param callback? Callback
 ---@return ManagedSession
-function ManagedSession:prompt(prompt, callback)
-	self.session:prompt(prompt, callback)
+function ManagedSession:prompt(prompts, callback)
+	local content_blocks = {}
+	for _, prompt in pairs(prompts) do
+		local cb = {}
+		if prompt.text then
+			cb.type = "text"
+			cb.text = prompt.text
+		elseif prompt.resource_link then
+			cb.type = "resource_link"
+			cb.name = prompt.resource_link.name
+			cb.uri = prompt.resource_link.uri
+		else
+			error("session_manager: unrecoginzed prompt type")
+		end
+		table.insert(content_blocks, cb)
+	end
+	self.session:prompt(content_blocks, callback)
 	return self
 end
 

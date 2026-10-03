@@ -242,12 +242,12 @@ function M.Session:new(server, params, callback)
 	return new_session
 end
 
----@param prompt JsonObject
+---@param content_blocks JsonObject[]
 ---@param callback? Callback
 ---@return self
-function M.Session:prompt(prompt, callback)
+function M.Session:prompt(content_blocks, callback)
 	local prompt_cmd = function()
-		local json_request = build_request("session/prompt", { sessionId = self._id, prompt = prompt })
+		local json_request = build_request("session/prompt", { sessionId = self._id, prompt = content_blocks })
 		self._server:_send_request(json_request, function(json_response)
 			self._queue:pop()
 
