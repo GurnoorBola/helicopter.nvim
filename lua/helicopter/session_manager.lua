@@ -47,17 +47,32 @@ end
 
 ---@param update_type UpdateType
 ---@param callback Callback
+---@return number
 function ManagedSession:on_update_type(update_type, callback)
-	self.session:on_session_update(update_type, function(json_response)
-		self:handle_update(json_response)
-		callback(json_response)
-	end)
+	return self.session:on_session_update(update_type, callback)
 end
 
 ---@param callback Callback
+---@return table<UpdateType, number>
 function ManagedSession:on_update(callback)
+	local callback_ids = {}
 	for _, update_type in pairs(Session.UpdateType) do
-		self:on_update_type(update_type, callback)
+		local id = self:on_update_type(update_type, callback)
+		callback_ids[update_type] = id
+	end
+	return callback_ids
+end
+
+---@param update_type UpdateType
+---@param id number
+function ManagedSession:del_update_callback(update_type, id)
+	return self.session:del_update_callback(update_type, id)
+end
+
+---@param callback_ids table<UpdateType, number>
+function ManagedSession:del_update_callbacks(callback_ids)
+	for update_type, id in pairs(callback_ids) do
+		self:del_update_callback(update_type, id)
 	end
 end
 

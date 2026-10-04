@@ -214,14 +214,18 @@ end
 ---@param managed_session ManagedSession
 ---@param on_submit? fun(value:string)
 function M.chat_open(managed_session, on_submit)
-	managed_session:on_update(function(json_response)
+	local callback_ids = managed_session:on_update(function(json_response)
 		update_chat(json_response)
 	end)
 
 	chat:mount()
 
-	chat_input:on("QuitPre", M.chat_close)
-	chat_history:on("QuitPre", M.chat_close)
+	chat_input:on("QuitPre", function()
+		M.chat_close(managed_session, callback_ids)
+	end)
+	chat_history:on("QuitPre", function()
+		M.chat_close(managed_session, callback_ids)
+	end)
 
 	chat_history.border:set_text("top", managed_session.name, "center")
 
@@ -249,7 +253,9 @@ function M.chat_append_input_text(lines)
 	vim.api.nvim_buf_set_lines(chat_input.bufnr, -1, -1, false, lines)
 end
 
-function M.chat_close()
+---@param managed_session ManagedSession
+function M.chat_close(managed_session, callback_ids)
+	managed_session:del_update_callbacks(callback_ids)
 	chat:unmount()
 end
 

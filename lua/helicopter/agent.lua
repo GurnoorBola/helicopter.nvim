@@ -40,10 +40,47 @@ local function parse_response(str_response)
 	print("[Error] Code:", json_response.error.code, "Message:", json_response.error.message)
 end
 
+---@alias Callback fun(json_obj:JsonObject)
+
+---@class EventHandler
+---@field private _num_callbacks number
+---@field private _callbacks table<number, Callback>
+local EventHandler = {}
+
+function EventHandler:new()
+	local new_event_handler = {
+		_num_callbacks = 0,
+		_callbacks = {},
+	}
+	return setmetatable(new_event_handler, { __index = self })
+end
+
+---@param callback Callback
+---@return number
+function EventHandler:register(callback)
+	self._num_callbacks = self._num_callbacks + 1
+	self._callbacks[self._num_callbacks] = callback
+	return self._num_callbacks
+end
+
+---@param id number
+function EventHandler:unregister(id)
+	if not self._callbacks[id] then
+		error("event handler: callback unregister failed; " .. id .. " is not a registered callback")
+	end
+	self._callbacks[id] = nil
+end
+
+---@param json_obj JsonObject
+function EventHandler:trigger(json_obj)
+	for _, callback in pairs(self._callbacks) do
+		callback(json_obj)
+	end
+end
+
 --- Servers ---
 
 ---@alias JsonObject table<string, any>
----@alias Callback fun(json_obj:JsonObject)
 
 ---@class Server
 ---@field private _id number|nil
@@ -200,7 +237,7 @@ end
 ---@class Session
 ---@field package _server Server
 ---@field package _id string
----@field private _callbacks table<UpdateType, Callback>
+---@field private _event_handlers table<UpdateType, EventHandler>
 ---@field private _queue Queue
 ---@field private _request_handlers table<string, function>
 M.Session = {}
@@ -213,8 +250,8 @@ function M.Session:new(server, params, callback)
 	local new_session = {
 		_server = server,
 		_id = "unset",
-		-- Callbacks for when session recieves a message (notification or request)
-		_callbacks = {},
+		-- Handlers for when session recieves a notification or request
+		_event_handlers = {},
 		_queue = Utils.queue:new(),
 	}
 
@@ -285,19 +322,32 @@ M.Session.UpdateType = {
 
 ---@param type UpdateType
 ---@param callback Callback
----@return self
+---@return number
 function M.Session:on_session_update(type, callback)
-	self._callbacks[type] = callback
-	return self
+	if not self._event_handlers[type] then
+		self._event_handlers[type] = EventHandler:new()
+	end
+	local event_handler = self._event_handlers[type]
+	return event_handler:register(callback)
+end
+
+---@param type UpdateType
+---@param id number
+function M.Session:del_update_callback(type, id)
+	if not self._event_handlers[type] then
+		error("session: delete callback failed; no handler for update type " .. type)
+	end
+	local event_handler = self._event_handlers[type]
+	event_handler:unregister(id)
 end
 
 ---@package
 ---@param update JsonObject
 function M.Session:_update(update)
 	-- TODO: switch on update type and call appropriate handler
-	local callback = self._callbacks[update.sessionUpdate]
-	if callback then
-		callback(update)
+	local event_handler = self._event_handlers[update.sessionUpdate]
+	if event_handler then
+		event_handler:trigger(update)
 	end
 end
 
@@ -333,10 +383,23 @@ end
 -- Defines callback behavior upon handling a request of type method
 ---@param method string
 ---@param callback Callback
----@return self
+---@return number
 function M.Session:on_session_request(method, callback)
-	self._callbacks[method] = callback
-	return self
+	if not self._event_handlers[method] then
+		self._event_handlers[method] = EventHandler:new()
+	end
+	local event_handler = self._event_handlers[method]
+	return event_handler:register(callback)
+end
+
+---@param method string
+---@param id number
+function M.Session:del_request_callback(method, id)
+	if not self._event_handlers[method] then
+		error("session: delete callback failed; no handler for request type " .. method)
+	end
+	local event_handler = self._event_handlers[method]
+	event_handler:unregister(id)
 end
 
 ---@package
@@ -345,6 +408,7 @@ function M.Session:_handle_request(json_request)
 	local method = json_request.method
 
 	local handler = self._request_handlers[method]
+	-- WARN: will be removed once all handlers implemented
 	if not handler then
 		handler = function(_, _)
 			print("no handler for ", method)
@@ -352,9 +416,9 @@ function M.Session:_handle_request(json_request)
 	end
 	handler(self, json_request.params)
 
-	if self._callbacks[method] then
-		local callback = self._callbacks[method]
-		callback(json_request)
+	if self._event_handlers[method] then
+		local even_handler = self._event_handlers[method]
+		even_handler:trigger(json_request)
 	end
 end
 
@@ -366,11 +430,13 @@ M.Session._request_handlers = {
 ---@private
 function M.Session:_read_text_file(params)
 	-- TODO: handle reading a text file
+	print("read text unimplemented... oops now we are stuck")
 end
 
 ---@private
 function M.Session:_write_text_file(params)
 	-- TODO: handle writing a text file
+	print("write text unimplemented... oops now we are stuck")
 end
 
 return M
