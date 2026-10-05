@@ -17,21 +17,23 @@ local function build_context(opts)
 	return str_prompt
 end
 
-local curr_session
 local id = 1
 function M.ask(opts)
-	if curr_session and Ui.is_chat_open(curr_session) then
+	local active_session = SessionManager.get_active_session()
+	if active_session and Ui.is_chat_open(active_session) then
 		Ui.chat_hide()
 		return
 	end
 
-	if curr_session == nil or (#opts.fargs == 1 and opts.fargs[1] == "new") then
+	if active_session == nil or (#opts.fargs == 1 and opts.fargs[1] == "new") then
 		local session_name = "ask_sess#" .. id
 		id = id + 1
 
-		curr_session = SessionManager.new_session(session_name, os.getenv("PWD") or io.popen("cd"):read(), function()
+		SessionManager.new_session(session_name, os.getenv("PWD") or io.popen("cd"):read(), function()
 			Ui.notify("new session: " .. session_name, "HelicopterStandard")
 		end)
+
+		active_session = SessionManager.set_active_session(session_name)
 	end
 
 	local context
@@ -39,7 +41,7 @@ function M.ask(opts)
 		context = build_context(opts)
 	end
 
-	Ui.chat_open(curr_session)
+	Ui.chat_open(active_session)
 
 	if opts.range == 2 then
 		Ui.chat_append_input_text({ context })

@@ -11,7 +11,8 @@ local M = {}
 ---@field cwd string
 ---@field history table
 ---@field stale boolean
----@field private session Session
+---@field package session Session
+---@field package update_callbacks UpdateInfo[]
 local ManagedSession = {}
 
 ---@package
@@ -27,9 +28,10 @@ function ManagedSession:new(name, cwd, session)
 		history = {},
 		stale = false,
 		session = session,
+		update_callbacks = {},
 	}
 	setmetatable(new_session_data, { __index = self })
-	new_session_data:on_update(function(json_response)
+	new_session_data.update_callbacks = new_session_data:on_update(function(json_response)
 		new_session_data:handle_update(json_response)
 	end)
 	return new_session_data
@@ -45,34 +47,39 @@ function ManagedSession:handle_update(session_update)
 	-- print(self.history[#self.history].sessionUpdate)
 end
 
+---@class UpdateInfo
+---@field update_type UpdateType
+---@field id number
+
 ---@param update_type UpdateType
 ---@param callback Callback
----@return number
+---@return UpdateInfo
 function ManagedSession:on_update_type(update_type, callback)
-	return self.session:on_session_update(update_type, callback)
+	local id = self.session:on_session_update(update_type, callback)
+	local update_info = { update_type = update_type, id = id }
+	return update_info
 end
 
 ---@param callback Callback
----@return table<UpdateType, number>
+---@return UpdateInfo[]
 function ManagedSession:on_update(callback)
-	local callback_ids = {}
+	local update_info_list = {}
 	for _, update_type in pairs(Session.UpdateType) do
-		local id = self:on_update_type(update_type, callback)
-		callback_ids[update_type] = id
+		local update_info = self:on_update_type(update_type, callback)
+		table.insert(update_info_list, update_info)
 	end
-	return callback_ids
+	return update_info_list
 end
 
----@param update_type UpdateType
----@param id number
-function ManagedSession:del_update_callback(update_type, id)
-	return self.session:del_update_callback(update_type, id)
+---@param update_info UpdateInfo
+function ManagedSession:del_update_callback(update_info)
+	return self.session:del_update_callback(update_info.update_type, update_info.id)
 end
 
----@param callback_ids table<UpdateType, number>
-function ManagedSession:del_update_callbacks(callback_ids)
-	for update_type, id in pairs(callback_ids) do
-		self:del_update_callback(update_type, id)
+---@param update_info_list UpdateInfo[]
+function ManagedSession:del_update_callbacks(update_info_list)
+	for _, update_info in ipairs(update_info_list) do
+		self:del_update_callback(update_info)
 	end
 end
 
@@ -101,7 +108,7 @@ function ManagedSession:prompt(prompts, callback)
 			cb.name = prompt.resource_link.name
 			cb.uri = prompt.resource_link.uri
 		else
-			error("session_manager: unrecoginzed prompt type")
+			error("session_manager: cannot send prompt; unrecoginzed prompt type")
 		end
 		table.insert(content_blocks, cb)
 	end
@@ -109,8 +116,13 @@ function ManagedSession:prompt(prompts, callback)
 	return self
 end
 
-M.session_map = {}
+local session_map = {}
 
+---The session that the user is currently directly interacting with
+---@type ManagedSession|nil
+local active_session = nil
+
+---Creates a new managed session
 ---@param name string
 ---@param cwd string
 ---@param callback? Callback
@@ -124,12 +136,35 @@ function M.new_session(name, cwd, callback)
 		},
 	}, callback)
 	local session_data = ManagedSession:new(name, cwd, session)
-	M.session_map[name] = session_data
+	session_map[name] = session_data
 	return session_data
 end
 
-function M.get_session_data(name)
-	return M.session_map[name]
+---@return ManagedSession|nil
+function M.get_active_session()
+	return active_session
+end
+
+---@param name string
+function M.set_active_session(name)
+	local managed_session = M.get_managed_session(name)
+	active_session = managed_session
+	return active_session
+end
+
+---@param name string
+---@return ManagedSession
+function M.get_managed_session(name)
+	if not session_map[name] then
+		error("session_manager: session " .. name .. " not found")
+	end
+	return session_map[name]
+end
+
+function M.del_managed_session(name)
+	local managed_session = M.get_managed_session(name)
+	managed_session:del_update_callbacks(managed_session.update_callbacks)
+	session_map[name] = nil
 end
 
 return M

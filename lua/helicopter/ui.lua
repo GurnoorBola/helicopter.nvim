@@ -146,7 +146,7 @@ end
 ---@field layout NuiLayout
 ---@field config table
 ---@field managed_session ManagedSession
----@field private update_callbacks table<UpdateType, number>
+---@field private update_callbacks UpdateInfo[]
 ---@field private autocmds table[]
 local Chat = {}
 
